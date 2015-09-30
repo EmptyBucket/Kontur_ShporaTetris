@@ -2,34 +2,63 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.IO;
 using System.Linq;
 
 namespace ShporaKonturTetris
 {
     class EnterData
     {
-        public int Width { get; }
-        public int Height { get; }
-        public Figure[] Pieces { get; }
-        public string Commands { get; }
+        public int Width;
+        public int Height;
+        public Figure[] Pieces;
+        public string Commands;
 
         public class Figure
         {
-            public readonly Point[] Cells;
+            public Point[] Cells;
 
             public class Point
             {
-                public int X { get; }
-                public int Y { get; }
+                public int X;
+                public int Y;
             }
         }
     }
 
-    class FigureParser
+    static class EnterDataParser
     {
-        public Figure[] Parse(EnterData.Figure figure)
+        public static Commander CommanderParse(EnterData enterData)
         {
+            return new Commander(enterData.Commands);
+        }
 
+        public static Figure[] FigursParse(EnterData enterData)
+        {
+            EnterData.Figure[] figurs = enterData.Pieces;
+            List<Figure> parseFigure = new List<Figure>();
+            foreach(var figure in figurs)
+            {
+                parseFigure.Add(new Figure(CellParse(figure.Cells)));
+            }
+
+            return parseFigure.ToArray();
+        }
+
+        private static ProjectionPoint[] CellParse(EnterData.Figure.Point[] cells)
+        {
+            var axisPoint = cells.First(cell => cell.X == 0 && cell.Y == 0);
+            var axisProjectionPoint = new ProjectionPoint(axisPoint.X, axisPoint.Y);
+            var listCells = cells
+                .Where(cell => !(cell.X == 0 && cell.Y == 0))
+                .Select(cell => new ProjectionPoint(cell.X, cell.Y, axisProjectionPoint)).ToList();
+            listCells.Add(axisProjectionPoint);
+            return listCells.ToArray();
+        }
+
+        public static PlayingField PlayingFieldParser(EnterData enterData)
+        {
+            return new PlayingField(enterData.Width, enterData.Height);
         }
     }
 
@@ -47,6 +76,7 @@ namespace ShporaKonturTetris
             {
                 listCommand.Add((CommandType)command);
             }
+            _commands = listCommand;
         }
 
         public IEnumerable<CommandType> Commands()
@@ -74,11 +104,21 @@ namespace ShporaKonturTetris
         public int ProjectionY { get; }
 
         public ProjectionPoint Axis { get; }
+        public bool IsAxis { get; }
+
+        public ProjectionPoint(int x, int y) : base(x, y)
+        {
+            ProjectionX = x;
+            ProjectionY = y;
+            IsAxis = true;
+            Axis = this;
+        }
 
         public ProjectionPoint(int x, int y, ProjectionPoint axis) : base(x, y)
         {
             ProjectionX = x;
             ProjectionY = y;
+            IsAxis = false;
             Axis = axis;
         }
 
@@ -87,7 +127,17 @@ namespace ShporaKonturTetris
         {
             ProjectionX = projectionX;
             ProjectionY = projectionY;
+            IsAxis = false;
             Axis = axis;
+        }
+
+        public ProjectionPoint(int x, int y, int projectionX,
+            int projectionY) : base(x, y)
+        {
+            ProjectionX = projectionX;
+            ProjectionY = projectionY;
+            IsAxis = true;
+            Axis = this;
         }
     }
 
@@ -104,9 +154,9 @@ namespace ShporaKonturTetris
         {
             Func<ProjectionPoint, Point> rotateClockwise = projectionPoint =>
             {
-                int newProjectionX = projectionPoint.Axis.ProjectionX + projectionPoint.ProjectionY -
+                int newProjectionX = projectionPoint.Axis.ProjectionX - projectionPoint.ProjectionY +
                 projectionPoint.Axis.ProjectionY;
-                int newProjectionY = projectionPoint.Axis.ProjectionY - projectionPoint.ProjectionX +
+                int newProjectionY = projectionPoint.Axis.ProjectionY + projectionPoint.ProjectionX -
                 projectionPoint.Axis.ProjectionX;
                 return new Point(newProjectionX, newProjectionY);
             };
@@ -119,9 +169,9 @@ namespace ShporaKonturTetris
         {
             Func<ProjectionPoint, Point> rotateCounterClockwise = projectionPoint =>
             {
-                int newProjectionX = projectionPoint.Axis.ProjectionX - projectionPoint.ProjectionY +
+                int newProjectionX = projectionPoint.Axis.ProjectionX + projectionPoint.ProjectionY -
                 projectionPoint.Axis.ProjectionY;
-                int newProjectionY = projectionPoint.Axis.ProjectionY + projectionPoint.ProjectionX -
+                int newProjectionY = projectionPoint.Axis.ProjectionY - projectionPoint.ProjectionX +
                 projectionPoint.Axis.ProjectionX;
                 return new Point(newProjectionX, newProjectionY);
             };
@@ -156,16 +206,23 @@ namespace ShporaKonturTetris
 
         private Figure PerformOperation(Func<ProjectionPoint, Point> calculateProjectionCoord)
         {
-            var cells = Cells.Select(projectionPoint =>
+            var axis = Cells.First(cell => cell.IsAxis);
+            Point newPointAxis = calculateProjectionCoord(axis);
+            var newAxis = new ProjectionPoint(axis.X, axis.Y, newPointAxis.X, newPointAxis.Y);
+
+            var cells = Cells
+                .Where(projectionPoint => !projectionPoint.IsAxis)
+                .Select(projectionPoint =>
             {
                 Point newPoint = calculateProjectionCoord(projectionPoint);
 
                 return new ProjectionPoint(
                 projectionPoint.X, projectionPoint.Y,
-                newPoint.X, newPoint.Y, projectionPoint.Axis);
-            }).ToArray();
+                newPoint.X, newPoint.Y, newAxis);
+            }).ToList();
+            cells.Add(newAxis);
 
-            return new Figure(cells);
+            return new Figure(cells.ToArray());
         }
     }
 
@@ -187,16 +244,19 @@ namespace ShporaKonturTetris
                     state, CountX).ToArray()), CountY).ToArray());
         }
 
-        public PlayingField(int CountX, int CountY,
+        public PlayingField(int countX, int countY,
             ImmutableArray<ImmutableArray<StateCoord>> field)
         {
+            CountX = countX;
+            CountY = countY;
+
             Field = field;
         }
     }
 
     abstract class Engine
     {
-        private readonly ImmutableArray<Figure> _figurs;
+        protected readonly ImmutableArray<Figure> _figurs;
 
         public abstract void Start();
 
@@ -217,7 +277,7 @@ namespace ShporaKonturTetris
             Action<PlayingField.StateCoord[][]> modPutFigure = field =>
             {
                 foreach (var cell in figure.Cells)
-                    field[cell.ProjectionX][cell.ProjectionY] = PlayingField.StateCoord.Busy;
+                    field[cell.ProjectionY][cell.ProjectionX] = PlayingField.StateCoord.Busy;
             };
 
             PlayingField newPlayingField = ModifyField(modPutFigure, playingField);
@@ -259,35 +319,35 @@ namespace ShporaKonturTetris
             return new PlayingField(playingField.CountX, playingField.CountY);
         }
 
-        protected IEnumerable<Figure> ProjectNewFigure(PlayingField playingField)
+        protected Figure ProjectNewFigure(Figure figure, PlayingField playingField)
         {
-            foreach (var figure in _figurs)
-            {
-                int lenFigure = figure.Cells[0].X;
-                foreach (var cell in figure.Cells.Skip(1))
-                    if (lenFigure < cell.X)
-                        lenFigure = cell.X;
+            int lenFigure = figure.Cells[0].X;
+            foreach (var cell in figure.Cells.Skip(1))
+                if (lenFigure < cell.X)
+                    lenFigure = cell.X;
+            lenFigure += 1;
 
-                int positionOffsetLeft = (playingField.CountX - lenFigure) / 2;
+            int positionOffsetLeft = (playingField.CountX - lenFigure) / 2;
 
-                var newFigure = figure.ShiftXRight(positionOffsetLeft);
+            var newFigure = figure.ShiftXRight(positionOffsetLeft);
 
-                if (СheckCollision(newFigure, playingField))
-                    throw new CollisionException();
+            if (СheckCollision(newFigure, playingField))
+                throw new CollisionException();
 
-                yield return newFigure;
-            }
+            return newFigure;
         }
 
         protected PlayingField RemAllFullRow(PlayingField playingField, ref int bonus)
         {
             var field = playingField.Field.ToList();
+            var remRow = new List<ImmutableArray<PlayingField.StateCoord>>();
             foreach (var row in field)
                 if (СheckFullRow(row))
                 {
-                    field.Remove(row);
+                    remRow.Add(row);
                     bonus++;
                 }
+            remRow.ForEach(row => field.Remove(row));            
 
             var valueEmptyRow = playingField.CountY - field.Count;
             var newFreeRow = new List<ImmutableArray<PlayingField.StateCoord>>(
@@ -296,7 +356,7 @@ namespace ShporaKonturTetris
                     valueEmptyRow));
 
             var newPlayingField = new PlayingField(
-                playingField.CountX, playingField.CountY, field.Concat(newFreeRow).ToImmutableArray());
+                playingField.CountX, playingField.CountY, newFreeRow.Concat(field).ToImmutableArray());
 
             return newPlayingField;
         }
@@ -304,9 +364,16 @@ namespace ShporaKonturTetris
 
         private bool СheckCollision(Figure figure, PlayingField playingField)
         {
-            foreach (var cell in figure.Cells)
-                if (playingField.Field[cell.ProjectionX][cell.ProjectionY] == PlayingField.StateCoord.Busy)
-                    return true;
+            try
+            {
+                foreach (var cell in figure.Cells)
+                    if (playingField.Field[cell.ProjectionY][cell.ProjectionX] == PlayingField.StateCoord.Busy)
+                        return true;
+            }
+            catch (IndexOutOfRangeException)
+            {
+                return true;
+            }
             return false;
         }
 
@@ -336,10 +403,10 @@ namespace ShporaKonturTetris
         private readonly Commander _commander;
         private readonly PlayingField _playingField;
 
-        public PlayingEngine(int width, int height, Figure[] figurs, Commander commander) :
+        public PlayingEngine(PlayingField playingField, Figure[] figurs, Commander commander) :
             base(figurs)
         {
-            _playingField = new PlayingField(width, height);
+            _playingField = playingField;
             _commander = commander;
         }
 
@@ -348,10 +415,8 @@ namespace ShporaKonturTetris
             int bonus = 0;
 
             var playingField = _playingField;
-
-            var enumeratorFigure = ProjectNewFigure(playingField).GetEnumerator();
-            enumeratorFigure.MoveNext();
-            var figure = enumeratorFigure.Current;
+            int numFigure = 0;
+            var figure = ProjectNewFigure(_figurs[numFigure++], playingField);
 
             foreach(var command in _commander.Commands())
             {
@@ -366,13 +431,13 @@ namespace ShporaKonturTetris
 
                     try
                     {
-                        enumeratorFigure.MoveNext();
-                        figure = enumeratorFigure.Current;
+                        figure = ProjectNewFigure(_figurs[numFigure], playingField);
+                        numFigure++;
                     }
                     catch (CollisionException)
                     {
                         playingField = GameOver(playingField, ref bonus);
-                        figure = enumeratorFigure.Current;
+                        figure = ProjectNewFigure(_figurs[numFigure++], playingField);
                     }
                 }
             }
@@ -383,11 +448,14 @@ namespace ShporaKonturTetris
     {
         static void Main(string[] args)
         {
-            var enterData = JsonConvert.DeserializeObject<EnterData>(args[0]);
+            string json = File.ReadAllText(args[0]);
+            var enterData = JsonConvert.DeserializeObject<EnterData>(json);
 
-            Commander commander = new Commander(enterData.Commands);
-            Figure[] figurs = FigureParser.Parse(enterData.Pieces);
-            PlayingEngine playingEngine = new PlayingEngine(enterData.Width, enterData.Height, figurs, commander);
+            Commander commander = EnterDataParser.CommanderParse(enterData);
+            Figure[] figurs = EnterDataParser.FigursParse(enterData);
+            PlayingField playingField = EnterDataParser.PlayingFieldParser(enterData);
+
+            PlayingEngine playingEngine = new PlayingEngine(playingField, figurs, commander);
             playingEngine.Start();
         }
     }

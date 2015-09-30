@@ -429,6 +429,8 @@ namespace ShporaKonturTetris
                     playingField = FixedFigureOnField(figure, playingField);
                     playingField = RemAllFullRow(playingField, ref bonus);
 
+                    if (numFigure == _figurs.Count())
+                        numFigure = 0;
                     try
                     {
                         figure = ProjectNewFigure(_figurs[numFigure], playingField);

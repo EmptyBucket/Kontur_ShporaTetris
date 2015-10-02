@@ -228,7 +228,7 @@ namespace ShporaKonturTetris
 
     class PlayingField
     {
-        public enum StateCoord { Busy = 1, Free = 0 }
+        public enum StateCoord { Busy = 0, Free, CurrentFigure }
 
         public ImmutableArray<ImmutableArray<StateCoord>> Field { get; }
         public int CountX { get; }
@@ -305,7 +305,19 @@ namespace ShporaKonturTetris
                     figure = figure.RotateClockwise();
                     break;
                 case Commander.CommandType.P:
-                    //вывести состояние поля
+                    var fieldOut = playingField.Field.Select(row => row.ToArray()).ToArray();
+                    Array.ForEach(figure.Cells, cell =>
+                    fieldOut[cell.ProjectionY][cell.ProjectionX] = PlayingField.StateCoord.CurrentFigure);
+                    Array.ForEach(fieldOut, row => 
+                    {
+                        Array.ForEach(row, cell =>
+                        Console.Write
+                        (
+                            cell == PlayingField.StateCoord.Free ? '.' :
+                            cell == PlayingField.StateCoord.Busy ? '#' : '*'
+                        ));
+                        Console.Write(Environment.NewLine);
+                    });
                     break;
             }
             if (СheckCollision(figure, playingField))
@@ -416,6 +428,7 @@ namespace ShporaKonturTetris
 
             var playingField = _playingField;
             int numFigure = 0;
+            int numCommand = 0;
             var figure = ProjectNewFigure(_figurs[numFigure++], playingField);
 
             foreach(var command in _commander.Commands())
@@ -441,7 +454,9 @@ namespace ShporaKonturTetris
                         playingField = GameOver(playingField, ref bonus);
                         figure = ProjectNewFigure(_figurs[numFigure++], playingField);
                     }
+                    Console.WriteLine("{0} {1}", numCommand, bonus);
                 }
+                numCommand++;
             }
         }
     }
@@ -459,6 +474,8 @@ namespace ShporaKonturTetris
 
             PlayingEngine playingEngine = new PlayingEngine(playingField, figurs, commander);
             playingEngine.Start();
+
+            Console.Read();
         }
     }
 }

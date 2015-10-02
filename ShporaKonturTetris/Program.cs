@@ -67,16 +67,13 @@ namespace ShporaKonturTetris
     {
         public enum CommandType { A = 'A', D = 'D', S = 'S', Q = 'Q', E = 'E', P = 'P' }
 
-        private readonly IEnumerable<CommandType> _commands;
+        private readonly ImmutableArray<CommandType> _commands;
 
         public Commander(string commands)
         {
             List<CommandType> listCommand = new List<CommandType>();
-            foreach(var command in commands)
-            {
-                listCommand.Add((CommandType)command);
-            }
-            _commands = listCommand;
+            Array.ForEach(commands.ToCharArray(), command => listCommand.Add((CommandType)command));
+            _commands = listCommand.ToImmutableArray();
         }
 
         public IEnumerable<CommandType> Commands()
@@ -143,11 +140,16 @@ namespace ShporaKonturTetris
 
     class Figure
     {
-        public ProjectionPoint[] Cells { get; }
+        public ImmutableArray<ProjectionPoint> Cells { get; }
 
         public Figure(ProjectionPoint[] cells)
         {
-            Cells = cells;
+            Cells = cells.ToImmutableArray();
+        }
+
+        public Figure(IEnumerable<ProjectionPoint> cells)
+        {
+            Cells = cells.ToImmutableArray();
         }
 
         public Figure RotateClockwise()
@@ -160,7 +162,6 @@ namespace ShporaKonturTetris
                 projectionPoint.Axis.ProjectionX;
                 return new Point(newProjectionX, newProjectionY);
             };
-
 
             return PerformOperation(rotateClockwise);
         }
@@ -213,16 +214,16 @@ namespace ShporaKonturTetris
             var cells = Cells
                 .Where(projectionPoint => !projectionPoint.IsAxis)
                 .Select(projectionPoint =>
-            {
-                Point newPoint = calculateProjectionCoord(projectionPoint);
+                {
+                    Point newPoint = calculateProjectionCoord(projectionPoint);
 
-                return new ProjectionPoint(
-                projectionPoint.X, projectionPoint.Y,
-                newPoint.X, newPoint.Y, newAxis);
-            }).ToList();
+                    return new ProjectionPoint(
+                    projectionPoint.X, projectionPoint.Y,
+                    newPoint.X, newPoint.Y, newAxis);
+                }).ToList();
             cells.Add(newAxis);
 
-            return new Figure(cells.ToArray());
+            return new Figure(cells);
         }
     }
 
@@ -239,9 +240,11 @@ namespace ShporaKonturTetris
             CountX = countX;
             CountY = countY;
 
-            Field = ImmutableArray.Create(Enumerable.Repeat(
-                ImmutableArray.Create(Enumerable.Repeat(
-                    state, CountX).ToArray()), CountY).ToArray());
+            Field = Enumerable.Repeat
+                (
+                    Enumerable.Repeat(state, CountX).ToImmutableArray(),
+                    CountY
+                ).ToImmutableArray();
         }
 
         public PlayingField(int countX, int countY,
@@ -256,14 +259,7 @@ namespace ShporaKonturTetris
 
     abstract class Engine
     {
-        protected readonly ImmutableArray<Figure> _figurs;
-
         public abstract void Start();
-
-        protected Engine(Figure[] figurs)
-        {
-            _figurs = figurs.ToImmutableArray();
-        }
 
         protected class CollisionException : Exception
         {
@@ -306,22 +302,25 @@ namespace ShporaKonturTetris
                     break;
                 case Commander.CommandType.P:
                     var fieldOut = playingField.Field.Select(row => row.ToArray()).ToArray();
-                    Array.ForEach(figure.Cells, cell =>
-                    fieldOut[cell.ProjectionY][cell.ProjectionX] = PlayingField.StateCoord.CurrentFigure);
-                    Array.ForEach(fieldOut, row => 
+                    foreach (var cell in figure.Cells)
+                        fieldOut[cell.ProjectionY][cell.ProjectionX] = PlayingField.StateCoord.CurrentFigure;
+
+                    foreach (var row in fieldOut)
                     {
-                        Array.ForEach(row, cell =>
-                        Console.Write
-                        (
-                            cell == PlayingField.StateCoord.Free ? '.' :
-                            cell == PlayingField.StateCoord.Busy ? '#' : '*'
-                        ));
+                        foreach (var cell in row)
+                            Console.Write
+                            (
+                                cell == PlayingField.StateCoord.Free ? '.' :
+                                cell == PlayingField.StateCoord.Busy ? '#' : '*'
+                            );
                         Console.Write(Environment.NewLine);
-                    });
+                    }
                     break;
             }
+
             if (СheckCollision(figure, playingField))
                 throw new CollisionException();
+
             return figure;
         }
 
@@ -362,10 +361,11 @@ namespace ShporaKonturTetris
             remRow.ForEach(row => field.Remove(row));            
 
             var valueEmptyRow = playingField.CountY - field.Count;
-            var newFreeRow = new List<ImmutableArray<PlayingField.StateCoord>>(
-                Enumerable.Repeat(ImmutableArray.Create(
-                    Enumerable.Repeat(PlayingField.StateCoord.Free, playingField.CountX).ToArray()),
-                    valueEmptyRow));
+            var newFreeRow = Enumerable.Repeat
+                (
+                    Enumerable.Repeat(PlayingField.StateCoord.Free, playingField.CountX).ToImmutableArray(),
+                    valueEmptyRow
+                );
 
             var newPlayingField = new PlayingField(
                 playingField.CountX, playingField.CountY, newFreeRow.Concat(field).ToImmutableArray());
@@ -379,7 +379,7 @@ namespace ShporaKonturTetris
             try
             {
                 foreach (var cell in figure.Cells)
-                    if (playingField.Field[cell.ProjectionY][cell.ProjectionX] == PlayingField.StateCoord.Busy)
+                    if (playingField.Field[cell.ProjectionY][cell.ProjectionX] != PlayingField.StateCoord.Free)
                         return true;
             }
             catch (IndexOutOfRangeException)
@@ -403,7 +403,7 @@ namespace ShporaKonturTetris
 
             modifyFieldFunc(modField);
 
-            var newField = modField.Select(row => ImmutableArray.Create(row)).ToImmutableArray();
+            var newField = modField.Select(row => row.ToImmutableArray()).ToImmutableArray();
             var newPlayingField = new PlayingField(playingField.CountX, playingField.CountY, newField);
 
             return newPlayingField;
@@ -414,21 +414,22 @@ namespace ShporaKonturTetris
     {
         private readonly Commander _commander;
         private readonly PlayingField _playingField;
+        private readonly ImmutableArray<Figure> _figurs;
 
-        public PlayingEngine(PlayingField playingField, Figure[] figurs, Commander commander) :
-            base(figurs)
+        public PlayingEngine(PlayingField playingField, Figure[] figurs, Commander commander)
         {
             _playingField = playingField;
             _commander = commander;
+            _figurs = figurs.ToImmutableArray();
         }
 
         public override void Start()
         {
             int bonus = 0;
-
-            var playingField = _playingField;
             int numFigure = 0;
             int numCommand = 0;
+
+            var playingField = _playingField;
             var figure = ProjectNewFigure(_figurs[numFigure++], playingField);
 
             foreach(var command in _commander.Commands())
@@ -442,10 +443,10 @@ namespace ShporaKonturTetris
                     playingField = FixedFigureOnField(figure, playingField);
                     playingField = RemAllFullRow(playingField, ref bonus);
 
-                    if (numFigure == _figurs.Count())
-                        numFigure = 0;
                     try
                     {
+                        if (numFigure == _figurs.Count())
+                            numFigure = 0;
                         figure = ProjectNewFigure(_figurs[numFigure], playingField);
                         numFigure++;
                     }

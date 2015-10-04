@@ -332,15 +332,26 @@ namespace ShporaKonturTetris
 
         protected Figure ProjectNewFigure(Figure figure, PlayingField playingField)
         {
-            int lenFigure = figure.Cells[0].X;
+            int rightEndFigure = figure.Cells[0].X;
             foreach (var cell in figure.Cells.Skip(1))
-                if (lenFigure < cell.X)
-                    lenFigure = cell.X;
-            lenFigure += 1;
+                if (rightEndFigure < cell.X)
+                    rightEndFigure = cell.X;
+
+            int leftEndFigure = figure.Cells[0].X;
+            foreach (var cell in figure.Cells.Skip(1))
+                if (leftEndFigure > cell.X)
+                    leftEndFigure = cell.X;
+
+            int lenFigure = rightEndFigure - leftEndFigure + 1;
 
             int positionOffsetLeft = (playingField.CountX - lenFigure) / 2;
 
-            var newFigure = figure.ShiftXRight(positionOffsetLeft);
+            int upEndFigure = figure.Cells[0].Y;
+            foreach (var cell in figure.Cells.Skip(1))
+                if (cell.Y < upEndFigure)
+                    upEndFigure = cell.Y;
+
+            var newFigure = figure.ShiftXRight(Math.Abs(leftEndFigure) + positionOffsetLeft).ShiftYDown(Math.Abs(upEndFigure));
 
             if (СheckCollision(newFigure, playingField))
                 throw new CollisionException();
@@ -440,6 +451,10 @@ namespace ShporaKonturTetris
                 }
                 catch (CollisionException)
                 {
+                    if (numCommand == 23)
+                    {
+
+                    }
                     playingField = FixedFigureOnField(figure, playingField);
                     playingField = RemAllFullRow(playingField, ref bonus);
 
@@ -475,8 +490,6 @@ namespace ShporaKonturTetris
 
             PlayingEngine playingEngine = new PlayingEngine(playingField, figurs, commander);
             playingEngine.Start();
-
-            Console.Read();
         }
     }
 }

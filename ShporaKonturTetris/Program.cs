@@ -451,10 +451,6 @@ namespace ShporaKonturTetris
                 }
                 catch (CollisionException)
                 {
-                    if (numCommand == 23)
-                    {
-
-                    }
                     playingField = FixedFigureOnField(figure, playingField);
                     playingField = RemAllFullRow(playingField, ref bonus);
 
